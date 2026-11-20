@@ -4,9 +4,10 @@ from typing import TypedDict, Annotated
 from langgraph.graph import MessagesState
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_openai import ChatOpenAI
 import os
+import sqlite3
 
 llm  = ChatOpenAI(model = "gpt-6-luna",  openai_api_key=os.environ.get("OPENAI_API_KEY"),)
 class State(MessagesState):
@@ -17,8 +18,10 @@ def chat_node(state:State):
     message  = state["messages"]
     return {"messages" :llm.invoke(message)}
 
+
+conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
 graph = StateGraph(State)
-memory = InMemorySaver()
+memory = SqliteSaver(conn)
 
 graph.add_node("chat_node", chat_node)
 
