@@ -9,8 +9,9 @@ load_dotenv()
 
 DEFAULT_TITLE = "New thread"
 
-st.set_page_config(page_title="suraj", page_icon="💬", layout="centered")
-st.title("Suraj's Chatbot")
+st.set_page_config(page_title="हमरबानी हमर गोठ", page_icon="💬", layout="centered")
+st.title("हमरबानी हमर गोठ")
+st.subheader("Created by Suraj")
 
 if not os.getenv("OPENAI_API_KEY"):
     st.warning("Set OPENAI_API_KEY in your .env file or environment to send messages.")
@@ -114,7 +115,7 @@ for message in active_thread["messages"]:
     with st.chat_message(message_role(message)):
         st.markdown(message_text(message))
 
-if prompt := st.chat_input("Ask Suraj's bot"):
+if prompt := st.chat_input("छत्तीसगढ़ी मं लिखव (Roman spelling is okay)"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
