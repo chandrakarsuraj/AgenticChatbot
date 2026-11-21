@@ -12,10 +12,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langchain_tavily import TavilySearch
 from langchain.tools import tool
 from langgraph.prebuilt import ToolNode, tools_condition
-from src.tools.tools import web_search
+from src.tools.tools import web_search, get_cg_district_population
 
 
-tools = [web_search]
+tools = [web_search, get_cg_district_population]
 llm  = ChatOpenAI(model = "gpt-6-luna",  openai_api_key=os.environ.get("OPENAI_API_KEY"),)
 llm_with_tools  = llm.bind_tools(tools)
 class State(MessagesState):
@@ -36,7 +36,7 @@ SYSTEM_PROMPT = """तें एक मददगार अउ सम्मान
 
 def chat_node(state: State):
     messages = [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]]
-    return {"messages": [llm.invoke(messages)]}
+    return {"messages": [llm_with_tools.invoke(messages)]}
 
 
 conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
