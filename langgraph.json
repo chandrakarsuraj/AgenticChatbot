@@ -1,0 +1,15 @@
+{
+  "dependencies": [
+    "langgraph",
+    "langchain",
+    "langchain-openai",
+    "langchain-tavily",
+    "langgraph-checkpoint-sqlite",
+    "python-dotenv"
+  ],
+  "graphs": {
+    "agent": "./src/agents/agents.py:api_graph"
+  },
+  "env": "./.env",
+  "python_version": "3.12"
+}

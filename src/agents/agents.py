@@ -40,19 +40,23 @@ def chat_node(state: State):
 
 
 conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
-graph = StateGraph(State)
+builder = StateGraph(State)
 memory = SqliteSaver(conn)
 memory.setup()
 
 tools = [web_search]
-graph.add_node("chat_node", chat_node)
-graph.add_node( "tools",ToolNode(tools))
+builder.add_node("chat_node", chat_node)
+builder.add_node("tools", ToolNode(tools))
 
-graph.add_edge(START, "chat_node")
-graph.add_edge("chat_node", END)
-graph.add_edge("tools", "chat_node")
-graph.add_conditional_edges("chat_node",tools_condition)
-graph = graph.compile(checkpointer=memory)
+builder.add_edge(START, "chat_node")
+builder.add_edge("chat_node", END)
+builder.add_edge("tools", "chat_node")
+builder.add_conditional_edges("chat_node", tools_condition)
+
+# Keep SQLite persistence for the Streamlit app. LangGraph API supplies its
+# own persistence, so its exported graph must be compiled without a saver.
+graph = builder.compile(checkpointer=memory)
+api_graph = builder.compile()
 
 
 def _message_text(message):
