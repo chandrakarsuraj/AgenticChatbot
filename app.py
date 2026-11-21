@@ -38,34 +38,72 @@ def message_role(message) -> str:
     return "user" if getattr(message, "type", "") == "human" else "assistant"
 
 
-def stream_agent_reply(prompt: str, thread_id: str):
-    """Stream a response using the selected checkpointed thread."""
-    config = {"configurable": {"thread_id": thread_id},
-              "metadata": {
-                  "thread_id": thread_id
-                },
-               
-               "run_name":"chat_trace"
-              }
+def stream_agent_reply(prompt: str, thread_id: str, status):
+    """Stream assistant text and show tool progress, never tool results."""
+    config = {
+        "configurable": {"thread_id": thread_id},
+        "metadata": {"thread_id": thread_id},
+        "run_name": "chat_trace",
+    }
     inputs = {"messages": [HumanMessage(content=prompt)]}
+    current_status = "Thinking…"
+    tool_labels = {
+        "web_search": "Searching the web…",
+        "get_cg_district_population": "Looking up population data…",
+    }
 
-    for chunk, metadata in graph.stream(
+    def update_status(label: str) -> None:
+        nonlocal current_status
+        if label != current_status:
+            status.update(label=label, state="running", expanded=False)
+            current_status = label
+
+    def progress_for_messages(messages) -> str | None:
+        for message in messages:
+            calls = (
+                getattr(message, "tool_calls", None)
+                or getattr(message, "tool_call_chunks", None)
+                or []
+            )
+            for call in calls:
+                name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
+                if name:
+                    return tool_labels.get(name, "Working on your request…")
+        return None
+
+    for mode, event in graph.stream(
         inputs,
         config,
-        stream_mode="messages",
+        stream_mode=["messages", "updates"],
     ):
+        if mode == "updates":
+            chat_update = event.get("chat_node", {})
+            progress = progress_for_messages(chat_update.get("messages", []))
+            if progress:
+                update_status(progress)
+            elif "tools" in event:
+                update_status("Preparing your answer…")
+            continue
+
+        chunk, metadata = event
         if metadata.get("langgraph_node") != "chat_node":
             continue
+
+        progress = progress_for_messages([chunk])
+        if progress:
+            update_status(progress)
 
         content = getattr(chunk, "content", "")
         if isinstance(content, str):
             if content:
+                update_status("Writing your answer…")
                 yield content
         elif isinstance(content, list):
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "text":
                     text = block.get("text", "")
                     if text:
+                        update_status("Writing your answer…")
                         yield text
 
 
@@ -118,20 +156,29 @@ with st.sidebar:
 
 st.caption(active_thread["title"])
 for message in active_thread["messages"]:
+    # ToolMessage contains raw tool output; keep it in graph state but not in chat UI.
+    if getattr(message, "type", "") == "tool":
+        continue
+    text = message_text(message).strip()
+    if not text:
+        continue
     with st.chat_message(message_role(message)):
-        st.markdown(message_text(message))
+        st.markdown(text)
 
 if prompt := st.chat_input("छत्तीसगढ़ी मं लिखव (Roman spelling is okay)"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
+        status = st.status("Thinking…", expanded=False)
         try:
-            response = st.write_stream(
-                stream_agent_reply(prompt, active_thread_id)
+            st.write_stream(
+                stream_agent_reply(prompt, active_thread_id, status)
             )
         except Exception as exc:
+            status.update(label="Unable to finish", state="error", expanded=False)
             st.error(f"Agent error: {exc}")
         else:
+            status.update(label="Done", state="complete", expanded=False)
             st.rerun()
 
