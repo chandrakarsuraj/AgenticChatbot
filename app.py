@@ -4,6 +4,7 @@ import uuid
 from dotenv import load_dotenv
 import streamlit as st
 from langchain_core.messages import HumanMessage
+from langgraph.types import Command
 
 load_dotenv()
 
@@ -38,13 +39,26 @@ def message_role(message) -> str:
     return "user" if getattr(message, "type", "") == "human" else "assistant"
 
 
-def stream_agent_reply(prompt: str, thread_id: str, status):
-    """Stream assistant text and show tool progress, never tool results."""
-    config = {
+def graph_config(thread_id: str) -> dict:
+    return {
         "configurable": {"thread_id": thread_id},
         "metadata": {"thread_id": thread_id},
         "run_name": "chat_trace",
     }
+
+
+def get_pending_interrupt(thread_id: str):
+    """Return a pending graph interrupt for this thread, if one exists."""
+    snapshot = graph.get_state(graph_config(thread_id))
+    for task in snapshot.tasks:
+        if task.interrupts:
+            return task.interrupts[0]
+    return None
+
+
+def stream_agent_reply(prompt: str, thread_id: str, status):
+    """Stream assistant text and show tool progress, never tool results."""
+    config = graph_config(thread_id)
     inputs = {"messages": [HumanMessage(content=prompt)]}
     current_status = "Thinking…"
     tool_labels = {
@@ -165,20 +179,62 @@ for message in active_thread["messages"]:
     with st.chat_message(message_role(message)):
         st.markdown(text)
 
-if prompt := st.chat_input("छत्तीसगढ़ी मं लिखव (Roman spelling is okay)"):
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
+pending_interrupt = get_pending_interrupt(active_thread_id)
+if pending_interrupt:
     with st.chat_message("assistant"):
-        status = st.status("Thinking…", expanded=False)
-        try:
-            st.write_stream(
-                stream_agent_reply(prompt, active_thread_id, status)
-            )
-        except Exception as exc:
-            status.update(label="Unable to finish", state="error", expanded=False)
-            st.error(f"Agent error: {exc}")
+        st.warning("Web search is waiting for your approval.")
+        interrupt_value = getattr(pending_interrupt, "value", pending_interrupt)
+        if isinstance(interrupt_value, dict):
+            st.json(interrupt_value)
         else:
-            status.update(label="Done", state="complete", expanded=False)
-            st.rerun()
+            st.write(interrupt_value)
+
+        approve_col, reject_col = st.columns(2)
+        decision = None
+        with approve_col:
+            if st.button(
+                "Approve web search",
+                key=f"approve_search_{active_thread_id}",
+                use_container_width=True,
+            ):
+                decision = True
+        with reject_col:
+            if st.button(
+                "Reject web search",
+                key=f"reject_search_{active_thread_id}",
+                use_container_width=True,
+            ):
+                decision = False
+
+        if decision is not None:
+            try:
+                with st.spinner("Resuming the assistant…"):
+                    graph.invoke(
+                        Command(resume=decision),
+                        graph_config(active_thread_id),
+                    )
+            except Exception as exc:
+                st.error(f"Unable to resume the agent: {exc}")
+            else:
+                st.rerun()
+else:
+    if prompt := st.chat_input("छत्तीसगढ़ी मं लिखव (Roman spelling is okay)"):
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            status = st.status("Thinking…", expanded=False)
+            try:
+                st.write_stream(
+                    stream_agent_reply(prompt, active_thread_id, status)
+                )
+            except Exception as exc:
+                status.update(label="Unable to finish", state="error", expanded=False)
+                st.error(f"Agent error: {exc}")
+            else:
+                if get_pending_interrupt(active_thread_id):
+                    status.update(label="Approval required", state="complete", expanded=False)
+                else:
+                    status.update(label="Done", state="complete", expanded=False)
+                st.rerun()
 

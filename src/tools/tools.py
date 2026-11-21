@@ -1,8 +1,14 @@
 
 from langchain_tavily import TavilySearch
 import os
-from langchain.tools import tool
+
+from langchain_core.tools import tool
 import requests
+from langgraph.types import interrupt
+
+
+
+
 @tool
 def web_search(query: str) -> str:
     """Search the web with Tavily and return formatted results."""
@@ -12,6 +18,14 @@ def web_search(query: str) -> str:
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
         return "Web search is unavailable: set the TAVILY_API_KEY environment variable."
+
+
+    decision = interrupt(
+        f"Allow web search for this query Yes/Noe: {query}?"
+    )
+
+    if not decision:
+        return "Web search rejected by admin."
 
     try:
         tavily_search = TavilySearch(
